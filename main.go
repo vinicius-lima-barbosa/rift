@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -34,19 +32,16 @@ func latencyMiddleware(delay time.Duration, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		timer := time.NewTimer(delay)
+		defer timer.Stop()
 
-		fmt.Println("lantecy middleware started")
+		log.Println("lantecy middleware started")
 
 		select {
 		case <-timer.C:
-			fmt.Println("server responds")
+			log.Println("server responds")
 			next.ServeHTTP(w, r)
 		case <-ctx.Done():
-			err := ctx.Err()
-			if errors.Is(err, http.ErrAbortHandler) || errors.Is(err, context.Canceled) {
-				fmt.Println("client canceled the request")
-			}
-
+			log.Printf("request canceled: %v\n", ctx.Err())
 			return
 		}
 	})
