@@ -7,6 +7,20 @@ import (
 	"time"
 )
 
+// Rule
+
+type Rule struct {
+	Method string
+	Path   string
+	Delay  time.Duration
+}
+
+func (rule Rule) Match(r *http.Request) bool {
+	return r.Method == rule.Method && r.URL.Path == rule.Path
+}
+
+// Handler
+
 type Handler struct{}
 
 func (h Handler) ServeHTTP(
@@ -28,19 +42,19 @@ func timingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func latencyMiddleware(delay time.Duration, next http.Handler) http.Handler {
+func latencyMiddleware(rule Rule, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		if r.Method != http.MethodPost || r.URL.Path != "/payments" {
+		if !rule.Match(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		timer := time.NewTimer(delay)
+		timer := time.NewTimer(rule.Delay)
 		defer timer.Stop()
 
-		log.Printf("fault=latency method=%s path=%s delay=%s\n", r.Method, r.URL.Path, delay)
+		log.Printf("fault=latency method=%s path=%s delay=%s\n", r.Method, r.URL.Path, rule.Delay)
 
 		select {
 		case <-timer.C:
@@ -56,7 +70,13 @@ func latencyMiddleware(delay time.Duration, next http.Handler) http.Handler {
 func main() {
 	handler := Handler{}
 
-	handlerWithLatency := latencyMiddleware(500*time.Millisecond, handler)
+	rule := Rule{
+		Method: http.MethodPost,
+		Path:   "/payments",
+		Delay:  500 * time.Millisecond,
+	}
+
+	handlerWithLatency := latencyMiddleware(rule, handler)
 	handlerWithTiming := timingMiddleware(handlerWithLatency)
 
 	log.Println("server listening on 8080")
