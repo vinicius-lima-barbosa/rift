@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -18,13 +20,6 @@ func (h Handler) ServeHTTP(
 	fmt.Fprintf(w, "%s %s\n", r.Method, r.URL.Path) // Client Response
 }
 
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("%s %s\n", r.Method, r.URL.Path) // Server
-		next.ServeHTTP(w, r)
-	})
-}
-
 func timingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -35,11 +30,33 @@ func timingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func latencyMiddleware(delay time.Duration, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		timer := time.NewTimer(delay)
+
+		fmt.Println("lantecy middleware started")
+
+		select {
+		case <-timer.C:
+			fmt.Println("server responds")
+			next.ServeHTTP(w, r)
+		case <-ctx.Done():
+			err := ctx.Err()
+			if errors.Is(err, http.ErrAbortHandler) || errors.Is(err, context.Canceled) {
+				fmt.Println("client canceled the request")
+			}
+
+			return
+		}
+	})
+}
+
 func main() {
 	handler := Handler{}
 
-	handlerWithLogging := loggingMiddleware(handler)
-	handlerWithTiming := timingMiddleware(handlerWithLogging)
+	handlerWithLatency := latencyMiddleware(500*time.Millisecond, handler)
+	handlerWithTiming := timingMiddleware(handlerWithLatency)
 
 	log.Println("server listening on 8080")
 
