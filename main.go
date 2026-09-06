@@ -42,6 +42,8 @@ func inspectHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func ecoHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+
 	if _, err := io.Copy(w, r.Body); err != nil {
 		http.Error(w, "failed to copy request body", http.StatusInternalServerError)
 	}
