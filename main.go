@@ -16,7 +16,22 @@ type Rule struct {
 }
 
 func (rule Rule) Match(r *http.Request) bool {
-	return r.Method == rule.Method && r.URL.Path == rule.Path
+	return r.Method == rule.Method &&
+		r.URL.Path == rule.Path
+}
+
+type RuleEngine struct {
+	Rules []Rule
+}
+
+func (engine RuleEngine) Match(r *http.Request) (Rule, bool) {
+	for _, rule := range engine.Rules {
+		if rule.Match(r) {
+			return rule, true
+		}
+	}
+
+	return Rule{}, false
 }
 
 // Handler
@@ -42,11 +57,13 @@ func timingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func latencyMiddleware(rule Rule, next http.Handler) http.Handler {
+func latencyMiddleware(engine RuleEngine, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		if !rule.Match(r) {
+		rule, matched := engine.Match(r)
+
+		if !matched {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -70,13 +87,32 @@ func latencyMiddleware(rule Rule, next http.Handler) http.Handler {
 func main() {
 	handler := Handler{}
 
-	rule := Rule{
-		Method: http.MethodPost,
-		Path:   "/payments",
-		Delay:  500 * time.Millisecond,
+	engine := RuleEngine{
+		Rules: []Rule{
+			{
+				Method: http.MethodPost,
+				Path:   "/payments",
+				Delay:  500 * time.Millisecond,
+			},
+			{
+				Method: http.MethodGet,
+				Path:   "/users",
+				Delay:  200 * time.Millisecond,
+			},
+			{
+				Method: http.MethodDelete,
+				Path:   "/orders",
+				Delay:  time.Second,
+			},
+			{
+				Method: http.MethodPost,
+				Path:   "/payments",
+				Delay:  2 * time.Second,
+			},
+		},
 	}
 
-	handlerWithLatency := latencyMiddleware(rule, handler)
+	handlerWithLatency := latencyMiddleware(engine, handler)
 	handlerWithTiming := timingMiddleware(handlerWithLatency)
 
 	log.Println("server listening on 8080")
