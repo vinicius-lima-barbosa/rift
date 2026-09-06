@@ -44,6 +44,18 @@ func inspectHandler(w http.ResponseWriter, r *http.Request) {
 func ecoHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 
+	// The Copy concept comes from Streaming.
+	// If a 5GB Request is sent, the proxy doesn't gonna read everything and send to memory.
+	// Instead, he'll work over parts of the data withou maintaning the entire content.
+
+	// Caso uma requisição de 5GB seja enviada, o proxy não vai ler tudo e enviar para a memória.
+	// Ele vai trabalhar sobre partes dos dados sem precisar manter o conteúdo inteiro.
+
+	// To Test:
+	// curl -i \
+	// 	-X POST \
+	// 	http://localhost:8080/echo \
+	// 	-d 'hello rift'
 	if _, err := io.Copy(w, r.Body); err != nil {
 		http.Error(w, "failed to copy request body", http.StatusInternalServerError)
 	}
