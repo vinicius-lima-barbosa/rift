@@ -31,17 +31,23 @@ func timingMiddleware(next http.Handler) http.Handler {
 func latencyMiddleware(delay time.Duration, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		if r.Method != http.MethodPost || r.URL.Path != "/payments" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		timer := time.NewTimer(delay)
 		defer timer.Stop()
 
-		log.Println("lantecy middleware started")
+		log.Printf("fault=latency method=%s path=%s delay=%s\n", r.Method, r.URL.Path, delay)
 
 		select {
 		case <-timer.C:
 			log.Println("server responds")
 			next.ServeHTTP(w, r)
 		case <-ctx.Done():
-			log.Printf("request canceled: %v\n", ctx.Err())
+			log.Printf("request canceled method=%s path=%s error=%v\n", r.Method, r.URL.Path, ctx.Err())
 			return
 		}
 	})
