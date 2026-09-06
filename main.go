@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"io"
 	"log"
 	"net/http"
 )
@@ -36,20 +36,26 @@ func inspectHandler(w http.ResponseWriter, r *http.Request) {
 		UserAgent: r.UserAgent(),
 	}
 
-	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("failed to encode response: %v", err)
+	}
+}
 
-	json.NewEncoder(w).Encode(data)
+func ecoHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := io.Copy(w, r.Body); err != nil {
+		http.Error(w, "failed to copy request body", http.StatusInternalServerError)
+	}
 }
 
 func main() {
-	http.HandleFunc("/inspect", inspectHandler)
-	http.HandleFunc("/echo", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "hello rift")
-	})
+	mux := http.NewServeMux()
 
-	log.Println("Server listening on 8080")
+	mux.HandleFunc("GET /inspect", inspectHandler)
+	mux.HandleFunc("POST /echo", ecoHandler)
 
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	log.Println("server listening on 8080")
+
+	if err := http.ListenAndServe(":8080", mux); err != nil {
 		log.Fatal(err)
 	}
 }
