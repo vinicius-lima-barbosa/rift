@@ -9,7 +9,7 @@ import (
 
 // Rule types
 
-type Request struct {
+type RequestMatch struct {
 	Method string
 	Path   string
 }
@@ -18,7 +18,7 @@ type LatencyFault struct {
 	Delay time.Duration
 }
 
-func (request Request) Match(r *http.Request) bool {
+func (request RequestMatch) Match(r *http.Request) bool {
 	return r.Method == request.Method &&
 		r.URL.Path == request.Path
 }
@@ -26,8 +26,8 @@ func (request Request) Match(r *http.Request) bool {
 // Rule
 
 type Rule struct {
-	Request Request
-	Latency LatencyFault
+	RequestMatch RequestMatch
+	Latency      LatencyFault
 }
 
 type RuleEngine struct {
@@ -36,7 +36,7 @@ type RuleEngine struct {
 
 func (engine RuleEngine) Match(r *http.Request) (Rule, bool) {
 	for _, rule := range engine.Rules {
-		if rule.Request.Match(r) {
+		if rule.RequestMatch.Match(r) {
 			return rule, true
 		}
 	}
@@ -100,7 +100,7 @@ func main() {
 	engine := RuleEngine{
 		Rules: []Rule{
 			{
-				Request: Request{
+				RequestMatch: RequestMatch{
 					Method: http.MethodPost,
 					Path:   "/payments",
 				},
@@ -109,7 +109,7 @@ func main() {
 				},
 			},
 			{
-				Request: Request{
+				RequestMatch: RequestMatch{
 					Method: http.MethodGet,
 					Path:   "/users",
 				},
