@@ -18,6 +18,11 @@ type LatencyFault struct {
 	Delay time.Duration
 }
 
+type AbortFault struct {
+	StatusCode int
+	Message    string
+}
+
 func (request RequestMatch) Match(r *http.Request) bool {
 	return r.Method == request.Method &&
 		r.URL.Path == request.Path
@@ -27,7 +32,8 @@ func (request RequestMatch) Match(r *http.Request) bool {
 
 type Rule struct {
 	RequestMatch RequestMatch
-	Latency      LatencyFault
+	Latency      *LatencyFault
+	Abort        *AbortFault
 }
 
 type RuleEngine struct {
@@ -67,7 +73,7 @@ func timingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func latencyMiddleware(engine RuleEngine, next http.Handler) http.Handler {
+func faultMiddleware(engine RuleEngine, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -78,18 +84,43 @@ func latencyMiddleware(engine RuleEngine, next http.Handler) http.Handler {
 			return
 		}
 
-		timer := time.NewTimer(rule.Latency.Delay)
-		defer timer.Stop()
-
-		log.Printf("fault=latency method=%s path=%s delay=%s\n", r.Method, r.URL.Path, rule.Latency.Delay)
-
-		select {
-		case <-timer.C:
-			log.Println("server responds")
+		if rule.Abort != nil && rule.Latency != nil {
 			next.ServeHTTP(w, r)
-		case <-ctx.Done():
-			log.Printf("request canceled method=%s path=%s error=%v\n", r.Method, r.URL.Path, ctx.Err())
 			return
+		}
+
+		if rule.Latency != nil {
+			if rule.Abort != nil {
+				log.Printf("fault=abort method=%s path=%s\n", r.Method, r.URL.Path)
+				w.Header().Set("Content-Type", "text/plain")
+				w.WriteHeader(rule.Abort.StatusCode)
+
+				fmt.Fprintln(w, rule.Abort.Message)
+				return
+			}
+
+			log.Printf("fault=latency method=%s path=%s delay=%s\n", r.Method, r.URL.Path, rule.Latency.Delay)
+
+			timer := time.NewTimer(rule.Latency.Delay)
+			defer timer.Stop()
+
+			select {
+			case <-timer.C:
+				log.Println("server responds")
+				next.ServeHTTP(w, r)
+			case <-ctx.Done():
+				log.Printf("request canceled method=%s path=%s error=%v\n", r.Method, r.URL.Path, ctx.Err())
+				return
+			}
+		} else {
+			if rule.Abort != nil {
+				log.Printf("fault=abort method=%s path=%s\n", r.Method, r.URL.Path)
+				w.Header().Set("Content-Type", "text/plain")
+				w.WriteHeader(rule.Abort.StatusCode)
+
+				fmt.Fprintln(w, rule.Abort.Message)
+				return
+			}
 		}
 	})
 }
@@ -104,7 +135,7 @@ func main() {
 					Method: http.MethodPost,
 					Path:   "/payments",
 				},
-				Latency: LatencyFault{
+				Latency: &LatencyFault{
 					Delay: 500 * time.Millisecond,
 				},
 			},
@@ -113,14 +144,15 @@ func main() {
 					Method: http.MethodGet,
 					Path:   "/users",
 				},
-				Latency: LatencyFault{
-					Delay: 200 * time.Millisecond,
+				Abort: &AbortFault{
+					StatusCode: http.StatusServiceUnavailable,
+					Message:    "service unavailable",
 				},
 			},
 		},
 	}
 
-	handlerWithLatency := latencyMiddleware(engine, handler)
+	handlerWithLatency := faultMiddleware(engine, handler)
 	handlerWithTiming := timingMiddleware(handlerWithLatency)
 
 	log.Println("server listening on 8080")
