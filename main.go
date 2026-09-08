@@ -73,10 +73,14 @@ func timingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func faultMiddleware(engine RuleEngine, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
+func faultMiddleware(
+	engine RuleEngine,
+	next http.Handler,
+) http.Handler {
+	return http.HandlerFunc(func(
+		w http.ResponseWriter,
+		r *http.Request,
+	) {
 		rule, matched := engine.Match(r)
 
 		if !matched {
@@ -84,41 +88,49 @@ func faultMiddleware(engine RuleEngine, next http.Handler) http.Handler {
 			return
 		}
 
+		if rule.Abort != nil {
+			log.Printf(
+				"fault=abort method=%s path=%s status=%d",
+				r.Method,
+				r.URL.Path,
+				rule.Abort.StatusCode,
+			)
+
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(rule.Abort.StatusCode)
+
+			fmt.Fprintln(w, rule.Abort.Message)
+			return
+		}
+
 		if rule.Latency != nil {
-			if rule.Abort != nil {
-				log.Printf("fault=abort method=%s path=%s\n", r.Method, r.URL.Path)
-				w.Header().Set("Content-Type", "text/plain")
-				w.WriteHeader(rule.Abort.StatusCode)
-
-				fmt.Fprintln(w, rule.Abort.Message)
-				return
-			}
-
-			log.Printf("fault=latency method=%s path=%s delay=%s\n", r.Method, r.URL.Path, rule.Latency.Delay)
+			log.Printf(
+				"fault=latency method=%s path=%s delay=%s",
+				r.Method,
+				r.URL.Path,
+				rule.Latency.Delay,
+			)
 
 			timer := time.NewTimer(rule.Latency.Delay)
 			defer timer.Stop()
 
 			select {
 			case <-timer.C:
-				log.Println("server responds")
 				next.ServeHTTP(w, r)
-			case <-ctx.Done():
-				log.Printf("request canceled method=%s path=%s error=%v\n", r.Method, r.URL.Path, ctx.Err())
-				return
-			}
-		} else {
-			if rule.Abort != nil {
-				log.Printf("fault=abort method=%s path=%s\n", r.Method, r.URL.Path)
-				w.Header().Set("Content-Type", "text/plain")
-				w.WriteHeader(rule.Abort.StatusCode)
 
-				fmt.Fprintln(w, rule.Abort.Message)
-				return
+			case <-r.Context().Done():
+				log.Printf(
+					"request canceled method=%s path=%s error=%v",
+					r.Method,
+					r.URL.Path,
+					r.Context().Err(),
+				)
 			}
 
-			next.ServeHTTP(w, r)
+			return
 		}
+
+		next.ServeHTTP(w, r)
 	})
 }
 
