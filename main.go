@@ -84,11 +84,6 @@ func faultMiddleware(engine RuleEngine, next http.Handler) http.Handler {
 			return
 		}
 
-		if rule.Abort != nil && rule.Latency != nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-
 		if rule.Latency != nil {
 			if rule.Abort != nil {
 				log.Printf("fault=abort method=%s path=%s\n", r.Method, r.URL.Path)
@@ -121,6 +116,8 @@ func faultMiddleware(engine RuleEngine, next http.Handler) http.Handler {
 				fmt.Fprintln(w, rule.Abort.Message)
 				return
 			}
+
+			next.ServeHTTP(w, r)
 		}
 	})
 }
