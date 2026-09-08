@@ -7,17 +7,27 @@ import (
 	"time"
 )
 
+// Rule types
+
+type Request struct {
+	Method string
+	Path   string
+}
+
+type LatencyFault struct {
+	Delay time.Duration
+}
+
+func (request Request) Match(r *http.Request) bool {
+	return r.Method == request.Method &&
+		r.URL.Path == request.Path
+}
+
 // Rule
 
 type Rule struct {
-	Method string
-	Path   string
-	Delay  time.Duration
-}
-
-func (rule Rule) Match(r *http.Request) bool {
-	return r.Method == rule.Method &&
-		r.URL.Path == rule.Path
+	Request Request
+	Latency LatencyFault
 }
 
 type RuleEngine struct {
@@ -26,7 +36,7 @@ type RuleEngine struct {
 
 func (engine RuleEngine) Match(r *http.Request) (Rule, bool) {
 	for _, rule := range engine.Rules {
-		if rule.Match(r) {
+		if rule.Request.Match(r) {
 			return rule, true
 		}
 	}
@@ -68,10 +78,10 @@ func latencyMiddleware(engine RuleEngine, next http.Handler) http.Handler {
 			return
 		}
 
-		timer := time.NewTimer(rule.Delay)
+		timer := time.NewTimer(rule.Latency.Delay)
 		defer timer.Stop()
 
-		log.Printf("fault=latency method=%s path=%s delay=%s\n", r.Method, r.URL.Path, rule.Delay)
+		log.Printf("fault=latency method=%s path=%s delay=%s\n", r.Method, r.URL.Path, rule.Latency.Delay)
 
 		select {
 		case <-timer.C:
@@ -90,24 +100,22 @@ func main() {
 	engine := RuleEngine{
 		Rules: []Rule{
 			{
-				Method: http.MethodPost,
-				Path:   "/payments",
-				Delay:  500 * time.Millisecond,
+				Request: Request{
+					Method: http.MethodPost,
+					Path:   "/payments",
+				},
+				Latency: LatencyFault{
+					Delay: 500 * time.Millisecond,
+				},
 			},
 			{
-				Method: http.MethodGet,
-				Path:   "/users",
-				Delay:  200 * time.Millisecond,
-			},
-			{
-				Method: http.MethodDelete,
-				Path:   "/orders",
-				Delay:  time.Second,
-			},
-			{
-				Method: http.MethodPost,
-				Path:   "/payments",
-				Delay:  2 * time.Second,
+				Request: Request{
+					Method: http.MethodGet,
+					Path:   "/users",
+				},
+				Latency: LatencyFault{
+					Delay: 200 * time.Millisecond,
+				},
 			},
 		},
 	}
