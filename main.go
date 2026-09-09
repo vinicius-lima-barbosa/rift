@@ -103,7 +103,7 @@ func (fault AbortFault) Apply(
 }
 
 func (fault LatencyFault) Validate() error {
-	if !(fault.Delay > 0) {
+	if fault.Delay <= 0 {
 		return fmt.Errorf("latency delay must be greater than zero")
 	}
 
