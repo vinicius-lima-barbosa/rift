@@ -130,10 +130,12 @@ func (rule Rule) Validate() error {
 		return err
 	}
 
-	if rule.Fault != nil {
-		if err := rule.Fault.Validate(); err != nil {
-			return err
-		}
+	if rule.Fault == nil {
+		return fmt.Errorf("fault is required")
+	}
+
+	if err := rule.Fault.Validate(); err != nil {
+		return err
 	}
 
 	return nil
@@ -210,9 +212,6 @@ func main() {
 				RequestMatch: RequestMatch{
 					Method: http.MethodPost,
 					Path:   "/payments",
-				},
-				Fault: LatencyFault{
-					Delay: 500 * time.Millisecond,
 				},
 			},
 			{
