@@ -28,12 +28,68 @@ func (request RequestMatch) Match(r *http.Request) bool {
 		r.URL.Path == request.Path
 }
 
+// Fault
+
+type Fault interface {
+	Apply(
+		w http.ResponseWriter,
+		r *http.Request,
+		next http.Handler,
+	)
+}
+
+func (fault LatencyFault) Apply(
+	w http.ResponseWriter,
+	r *http.Request,
+	next http.Handler,
+) {
+	log.Printf(
+		"fault=latency method=%s path=%s delay=%s",
+		r.Method,
+		r.URL.Path,
+		fault.Delay,
+	)
+
+	timer := time.NewTimer(fault.Delay)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		next.ServeHTTP(w, r)
+
+	case <-r.Context().Done():
+		log.Printf(
+			"request canceled method=%s path=%s error=%v",
+			r.Method,
+			r.URL.Path,
+			r.Context().Err(),
+		)
+	}
+}
+
+func (fault AbortFault) Apply(
+	w http.ResponseWriter,
+	r *http.Request,
+	next http.Handler,
+) {
+	log.Printf(
+		"fault=abort method=%s path=%s status=%d",
+		r.Method,
+		r.URL.Path,
+		fault.StatusCode,
+	)
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(fault.StatusCode)
+
+	fmt.Fprintln(w, fault.Message)
+}
+
 // Rule
 
 type Rule struct {
 	RequestMatch RequestMatch
-	Latency      *LatencyFault
-	Abort        *AbortFault
+	Fault        Fault
 }
 
 type RuleEngine struct {
@@ -88,49 +144,7 @@ func faultMiddleware(
 			return
 		}
 
-		if rule.Abort != nil {
-			log.Printf(
-				"fault=abort method=%s path=%s status=%d",
-				r.Method,
-				r.URL.Path,
-				rule.Abort.StatusCode,
-			)
-
-			w.Header().Set("Content-Type", "text/plain")
-			w.WriteHeader(rule.Abort.StatusCode)
-
-			fmt.Fprintln(w, rule.Abort.Message)
-			return
-		}
-
-		if rule.Latency != nil {
-			log.Printf(
-				"fault=latency method=%s path=%s delay=%s",
-				r.Method,
-				r.URL.Path,
-				rule.Latency.Delay,
-			)
-
-			timer := time.NewTimer(rule.Latency.Delay)
-			defer timer.Stop()
-
-			select {
-			case <-timer.C:
-				next.ServeHTTP(w, r)
-
-			case <-r.Context().Done():
-				log.Printf(
-					"request canceled method=%s path=%s error=%v",
-					r.Method,
-					r.URL.Path,
-					r.Context().Err(),
-				)
-			}
-
-			return
-		}
-
-		next.ServeHTTP(w, r)
+		rule.Fault.Apply(w, r, next)
 	})
 }
 
@@ -144,7 +158,7 @@ func main() {
 					Method: http.MethodPost,
 					Path:   "/payments",
 				},
-				Latency: &LatencyFault{
+				Fault: LatencyFault{
 					Delay: 500 * time.Millisecond,
 				},
 			},
@@ -153,7 +167,7 @@ func main() {
 					Method: http.MethodGet,
 					Path:   "/users",
 				},
-				Abort: &AbortFault{
+				Fault: AbortFault{
 					StatusCode: http.StatusServiceUnavailable,
 					Message:    "service unavailable",
 				},
