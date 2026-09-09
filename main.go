@@ -23,9 +23,17 @@ type AbortFault struct {
 	Message    string
 }
 
-func (request RequestMatch) Match(r *http.Request) bool {
-	return r.Method == request.Method &&
-		r.URL.Path == request.Path
+func (match RequestMatch) Match(r *http.Request) bool {
+	return r.Method == match.Method &&
+		r.URL.Path == match.Path
+}
+
+func (match RequestMatch) Validate() error {
+	if match.Method == "" || match.Path == "" || match.Path[0] != '/' {
+		return fmt.Errorf("methods or paths unavailable")
+	}
+
+	return nil
 }
 
 // Fault
@@ -36,6 +44,7 @@ type Fault interface {
 		r *http.Request,
 		next http.Handler,
 	)
+	Validate() error
 }
 
 func (fault LatencyFault) Apply(
@@ -85,6 +94,26 @@ func (fault AbortFault) Apply(
 	fmt.Fprintln(w, fault.Message)
 }
 
+func (fault LatencyFault) Validate() error {
+	if !(fault.Delay > 0) {
+		return fmt.Errorf("latency delay must be greater than zero")
+	}
+
+	return nil
+}
+
+func (fault AbortFault) Validate() error {
+	if fault.StatusCode < 400 || fault.StatusCode > 599 {
+		return fmt.Errorf("status should be higher than 400 or lower than 599")
+	}
+
+	if fault.Message == "" {
+		return fmt.Errorf("message should not be empty")
+	}
+
+	return nil
+}
+
 // Rule
 
 type Rule struct {
@@ -96,6 +125,20 @@ type RuleEngine struct {
 	Rules []Rule
 }
 
+func (rule Rule) Validate() error {
+	if err := rule.RequestMatch.Validate(); err != nil {
+		return err
+	}
+
+	if rule.Fault != nil {
+		if err := rule.Fault.Validate(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (engine RuleEngine) Match(r *http.Request) (Rule, bool) {
 	for _, rule := range engine.Rules {
 		if rule.RequestMatch.Match(r) {
@@ -104,6 +147,16 @@ func (engine RuleEngine) Match(r *http.Request) (Rule, bool) {
 	}
 
 	return Rule{}, false
+}
+
+func (engine RuleEngine) Validate() error {
+	for i, rule := range engine.Rules {
+		if err := rule.Validate(); err != nil {
+			return fmt.Errorf("rule %d: %w", i, err)
+		}
+	}
+
+	return nil
 }
 
 // Handler
@@ -175,8 +228,12 @@ func main() {
 		},
 	}
 
-	handlerWithLatency := faultMiddleware(engine, handler)
-	handlerWithTiming := timingMiddleware(handlerWithLatency)
+	if err := engine.Validate(); err != nil {
+		log.Fatal(err)
+	}
+
+	handlerWithFaults := faultMiddleware(engine, handler)
+	handlerWithTiming := timingMiddleware(handlerWithFaults)
 
 	log.Println("server listening on 8080")
 
