@@ -112,7 +112,7 @@ func (fault LatencyFault) Validate() error {
 
 func (fault AbortFault) Validate() error {
 	if fault.StatusCode < 400 || fault.StatusCode > 599 {
-		return fmt.Errorf("status should be higher than 400 or lower than 599")
+		return fmt.Errorf("status code must be between 400 and 599")
 	}
 
 	if fault.Message == "" {
