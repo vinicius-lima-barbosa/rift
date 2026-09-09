@@ -29,8 +29,16 @@ func (match RequestMatch) Match(r *http.Request) bool {
 }
 
 func (match RequestMatch) Validate() error {
-	if match.Method == "" || match.Path == "" || match.Path[0] != '/' {
-		return fmt.Errorf("methods or paths unavailable")
+	if match.Method == "" {
+		return fmt.Errorf("method is required")
+	}
+
+	if match.Path == "" {
+		return fmt.Errorf("path is required")
+	}
+
+	if match.Path[0] != '/' {
+		return fmt.Errorf("path must start with '/'")
 	}
 
 	return nil
