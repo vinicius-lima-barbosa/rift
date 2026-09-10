@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -171,15 +172,35 @@ func (engine RuleEngine) Validate() error {
 
 // Handler
 
-type Handler struct{}
+type ProxyHandler struct {
+	Client   *http.Client
+	Upstream string
+}
 
-func (h Handler) ServeHTTP(
+func (h ProxyHandler) ServeHTTP(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-	w.Header().Set("Content-Type", "text/plain")
+	targetURL := h.Upstream + r.URL.Path
 
-	fmt.Fprintf(w, "%s %s\n", r.Method, r.URL.Path) // Client Response
+	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, nil)
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	resp, err := h.Client.Do(upstreamReq)
+	if err != nil {
+		http.Error(w, "bad gateway", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.WriteHeader(resp.StatusCode)
+
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		log.Printf("error with streaming response body: %v", err)
+	}
 }
 
 func timingMiddleware(next http.Handler) http.Handler {
@@ -212,7 +233,10 @@ func faultMiddleware(
 }
 
 func main() {
-	handler := Handler{}
+	handler := ProxyHandler{
+		Client:   &http.Client{},
+		Upstream: "http://localhost:9000",
+	}
 
 	engine := RuleEngine{
 		Rules: []Rule{
@@ -220,6 +244,9 @@ func main() {
 				RequestMatch: RequestMatch{
 					Method: http.MethodPost,
 					Path:   "/payments",
+				},
+				Fault: LatencyFault{
+					Delay: 500 * time.Millisecond,
 				},
 			},
 			{
