@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 )
@@ -11,11 +12,22 @@ func main() {
 		w http.ResponseWriter,
 		r *http.Request,
 	) {
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Erro ao ler o corpo", http.StatusInternalServerError)
+			return
+		}
+		defer r.Body.Close()
+
 		fmt.Fprintf(
 			w,
-			"UPSTREAM: %s %s\n",
+			"method: %s\npath: %s\nquery: %s\ncontent-type: %s\nx-rift-test: %s\nbody: %s\n",
 			r.Method,
 			r.URL.Path,
+			r.URL.RawQuery,
+			r.Header.Get("Content-Type"),
+			r.Header.Get("X-Rift-Test"), // Captura o header customizado
+			string(bodyBytes),           // Converte os bytes do JSON para string
 		)
 	})
 

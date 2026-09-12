@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -181,13 +182,27 @@ func (h ProxyHandler) ServeHTTP(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-	targetURL := h.Upstream + r.URL.Path
-
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, nil)
+	targetURL, err := url.Parse(h.Upstream)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+
+	targetURL.Path = r.URL.Path
+	targetURL.RawQuery = r.URL.RawQuery
+
+	upstreamReq, err := http.NewRequestWithContext(
+		r.Context(),
+		r.Method,
+		targetURL.String(),
+		r.Body,
+	)
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	upstreamReq.Header = r.Header.Clone()
 
 	resp, err := h.Client.Do(upstreamReq)
 	if err != nil {
@@ -195,6 +210,12 @@ func (h ProxyHandler) ServeHTTP(
 		return
 	}
 	defer resp.Body.Close()
+
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
 
 	w.WriteHeader(resp.StatusCode)
 
