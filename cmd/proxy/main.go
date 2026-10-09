@@ -269,9 +269,10 @@ func (t LoggingTransport) RoundTrip(
 	resp, err := t.Next.RoundTrip(r)
 	if err != nil {
 		log.Printf(
-			"transport error method=%s url=%s",
+			"transport error method=%s url=%s error=%v",
 			r.Method,
-			r.URL.Path,
+			r.URL.String(),
+			err,
 		)
 
 		return nil, err
