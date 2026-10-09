@@ -253,9 +253,48 @@ func faultMiddleware(
 	})
 }
 
+// Round Tripper
+
+type LoggingTransport struct {
+	Next http.RoundTripper
+}
+
+func (t LoggingTransport) RoundTrip(
+	r *http.Request,
+) (*http.Response, error) {
+	log.Printf("transport request method=%s url=%s", r.Method, r.URL.String())
+
+	start := time.Now()
+
+	resp, err := t.Next.RoundTrip(r)
+	if err != nil {
+		log.Printf(
+			"transport error method=%s url=%s",
+			r.Method,
+			r.URL.Path,
+		)
+
+		return nil, err
+	}
+
+	log.Printf(
+		"transport response status=%d duration=%s",
+		resp.StatusCode,
+		time.Since(start),
+	)
+
+	return resp, nil
+}
+
+// Main
+
 func main() {
 	handler := ProxyHandler{
-		Client:   &http.Client{},
+		Client: &http.Client{
+			Transport: LoggingTransport{
+				Next: http.DefaultTransport,
+			},
+		},
 		Upstream: "http://localhost:9000",
 	}
 

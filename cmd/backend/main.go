@@ -17,7 +17,6 @@ func main() {
 			http.Error(w, "Erro ao ler o corpo", http.StatusInternalServerError)
 			return
 		}
-		defer r.Body.Close()
 
 		fmt.Fprintf(
 			w,
