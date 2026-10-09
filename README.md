@@ -1,7 +1,7 @@
 ## Rift Project
 
-The ideia to create Rift came from the wiling to create projects that are differents than REST APIs.
+The ideia to create Rift came from the wiling to create projects that are differents than REST APIs. So, i've decided to create a reverse proxy. 
 
 ## Run
 
-For now, just have go installed in your machine and execute `go run .`, Voilà, your Hello World works.
+Today, rift is in development, so is basically testing things and codes that i use to learn golang and http things.
