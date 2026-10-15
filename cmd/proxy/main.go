@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"time"
 )
@@ -262,11 +263,20 @@ type LoggingTransport struct {
 func (t LoggingTransport) RoundTrip(
 	r *http.Request,
 ) (*http.Response, error) {
-	log.Printf("transport request method=%s url=%s", r.Method, r.URL.String())
+	trace := &httptrace.ClientTrace{
+		GotConn: func(info httptrace.GotConnInfo) {
+			log.Printf("transport connection reused=%t wasIdle=%t idleTime=%s", info.Reused, info.WasIdle, info.IdleTime)
+		},
+	}
+
+	ctx := httptrace.WithClientTrace(r.Context(), trace)
+	req := r.WithContext(ctx)
+
+	log.Printf("transport request method=%s url=%s", req.Method, req.URL.String())
 
 	start := time.Now()
 
-	resp, err := t.Next.RoundTrip(r)
+	resp, err := t.Next.RoundTrip(req)
 	if err != nil {
 		log.Printf(
 			"transport error method=%s url=%s error=%v",
